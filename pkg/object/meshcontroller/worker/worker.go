@@ -40,6 +40,11 @@ import (
 	"github.com/megaease/easegress/pkg/supervisor"
 )
 
+type RawWorker interface {
+	Close()
+	Status() *supervisor.Status
+}
+
 type (
 	// Worker is a sidecar in service mesh.
 	Worker struct {
@@ -91,7 +96,7 @@ func decodeLabels(labelStr string) map[string]string {
 }
 
 // New creates a mesh worker.
-func New(superSpec *supervisor.Spec) *Worker {
+func New(superSpec *supervisor.Spec) RawWorker {
 	super := superSpec.Super()
 	_spec := superSpec.ObjectSpec().(*spec.Admin)
 	serviceName := super.Options().Labels[label.KeyServiceName]
@@ -394,14 +399,14 @@ func (worker *Worker) informJavaAgent() error {
 	return nil
 }
 
-// Status returns the status of worker.
+// Status returns the status of rawworker.
 func (worker *Worker) Status() *supervisor.Status {
 	return &supervisor.Status{
 		ObjectStatus: nil,
 	}
 }
 
-// Close closes the worker
+// Close closes the rawworker
 func (worker *Worker) Close() {
 	close(worker.done)
 

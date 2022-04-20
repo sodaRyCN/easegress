@@ -33,6 +33,8 @@ const (
 	ValueRoleMaster = "master"
 	// ValueRoleWorker is the name of worker
 	ValueRoleWorker = "worker"
+	//ValueRoleVMWorker is the name of vm-worker
+	ValueRoleVMWorker = "vm-worker"
 	// ValueRoleIngressController is the name of ingress controller
 	ValueRoleIngressController = "ingress-controller"
 )

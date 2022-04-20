@@ -71,6 +71,19 @@ func (s *Service) Unlock() {
 	}
 }
 
+// PutVMServiceSpec writes the service spec
+func (s *Service) PutVMServiceSpec(serviceSpec *spec.VMService) {
+	buff, err := yaml.Marshal(serviceSpec)
+	if err != nil {
+		panic(fmt.Errorf("BUG: marshal %#v to yaml failed: %v", serviceSpec, err))
+	}
+
+	err = s.store.Put(layout.ServiceSpecKey(serviceSpec.Name), string(buff))
+	if err != nil {
+		api.ClusterPanic(err)
+	}
+}
+
 // PutServiceSpec writes the service spec
 func (s *Service) PutServiceSpec(serviceSpec *spec.Service) {
 	buff, err := yaml.Marshal(serviceSpec)
@@ -88,6 +101,32 @@ func (s *Service) PutServiceSpec(serviceSpec *spec.Service) {
 func (s *Service) GetServiceSpec(serviceName string) *spec.Service {
 	serviceSpec, _ := s.GetServiceSpecWithInfo(serviceName)
 	return serviceSpec
+}
+
+// GetVMServiceSpec gets the service spec by its name
+func (s *Service) GetVMServiceSpec(serviceName string) *spec.VMService {
+	serviceSpec, _ := s.GetVMServiceSpecWithInfo(serviceName)
+	return serviceSpec
+}
+
+// GetVMServiceSpecWithInfo gets the service spec by its name
+func (s *Service) GetVMServiceSpecWithInfo(serviceName string) (*spec.VMService, *mvccpb.KeyValue) {
+	kv, err := s.store.GetRaw(layout.ServiceSpecKey(serviceName))
+	if err != nil {
+		api.ClusterPanic(err)
+	}
+
+	if kv == nil {
+		return nil, nil
+	}
+
+	serviceSpec := &spec.VMService{}
+	err = yaml.Unmarshal(kv.Value, serviceSpec)
+	if err != nil {
+		panic(fmt.Errorf("BUG: unmarshal %s to yaml failed: %v", string(kv.Value), err))
+	}
+
+	return serviceSpec, kv
 }
 
 // GetServiceSpecWithInfo gets the service spec by its name
@@ -155,6 +194,16 @@ func (s *Service) DeleteServiceSpec(serviceName string) {
 	if err != nil {
 		api.ClusterPanic(err)
 	}
+}
+
+// ListRawServiceSpecs lists services specs
+func (s *Service) ListRawServiceSpecs() map[string]*mvccpb.KeyValue {
+	kvs, err := s.store.GetRawPrefix(layout.ServiceSpecPrefix())
+	if err != nil {
+		api.ClusterPanic(err)
+	}
+
+	return kvs
 }
 
 // ListServiceSpecs lists services specs

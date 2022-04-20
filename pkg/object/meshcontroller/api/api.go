@@ -138,6 +138,7 @@ func New(superSpec *supervisor.Spec) *API {
 // Close unregisters a API
 func (a *API) Close() {
 	api.UnregisterAPIs(apiGroupName)
+	api.UnregisterAPIs(apiV2GroupName)
 }
 
 func (a *API) registerAPIs() {

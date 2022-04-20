@@ -151,6 +151,35 @@ type (
 		Observability *Observability `yaml:"observability" jsonschema:"omitempty"`
 	}
 
+	// VMService contains the information of service.
+	VMService struct {
+		Service		   `json:"service" yaml:"service"`
+		Protocol 	   string `yaml:"protocol" jsonschema:"required"`
+		Port 		   uint32 `yaml:"port" jsonschema:"required"`
+	}
+
+	// RegistryInstance when client registry to eg
+	RegistryInstance struct {
+		Name      		string `yaml:"name" jsonschema:"required"`
+		IP        		string `yaml:"ip" jsonschema:"required"`
+		ServiceLabels   map[string]string `yaml:"serviceLabels" jsonschema:"omitempty"`
+		InstanceID      string `yaml:"instanceID" jsonschema:"required"`
+	}
+
+	// StorageInstance struct storage in etcd
+	StorageInstance struct {
+		RegistryInstance  		  `yaml:"registryInstance" jsonschema:"required"`
+		Port     		uint32    `yaml:"port" jsonschema:"required"`
+		Protocol 		string    `yaml:"protocol" jsonschema:"required"`
+		RegistryName    string    `yaml:"registryName" jsonschema:"omitempty"`
+		RegisterTenant  string    `yaml:"registerTenant" jsonschema:"required"`
+		Sidecar 		*Sidecar  `yaml:"sidecar" jsonschema:"required"`
+		RegistryTime    string    `yaml:"registryTime" jsonschema:"omitempty"`
+		ProxyIP         string    `yaml:"proxyIP" jsonschema:"omitempty"`
+		// Set by heartbeat timer event or API
+		Status          string    `yaml:"status" jsonschema:"omitempty"`
+	}
+
 	// Mock is the spec of configured and static API responses for this service.
 	Mock struct {
 		// Enable is the mocking switch for this service.
@@ -938,6 +967,43 @@ rules:
 	return superSpec, nil
 }
 
+// SidecarIngressHTTPServerSpec generates a spec for sidecar ingress HTTP server
+func (s *VMService) SidecarIngressHTTPServerSpec(cert, rootCert *Certificate, instance *StorageInstance) (*supervisor.Spec, error) {
+	ingressHTTPServerFormat := `
+kind: HTTPServer
+name: %s
+port: %d
+keepAlive: false
+https: %s
+certBase64: %s
+keyBase64: %s
+caCertBase64: %s
+rules:
+  - paths:
+    - pathPrefix: /%s
+      backend: %s`
+
+	name := fmt.Sprintf("mesh-ingress-server-%s", s.Name)
+	pipelineName := fmt.Sprintf("mesh-ingress-pipeline-%s", instance.InstanceID)
+	certBase64, keyBase64, rootCertBaser64, needHTTPS := "", "", "", "false"
+	if cert != nil && rootCert != nil {
+		certBase64 = cert.CertBase64
+		keyBase64 = cert.KeyBase64
+		rootCertBaser64 = rootCert.CertBase64
+		needHTTPS = "true"
+	}
+	yamlConfig := fmt.Sprintf(ingressHTTPServerFormat, name,
+		s.Sidecar.IngressPort, needHTTPS, certBase64, keyBase64, rootCertBaser64, s.Name, pipelineName)
+
+	superSpec, err := supervisor.NewSpec(yamlConfig)
+	if err != nil {
+		logger.Errorf("new spec for %s failed: %v", yamlConfig, err)
+		return nil, err
+	}
+
+	return superSpec, nil
+}
+
 // UniqueCanaryHeaders returns the unique headers in canary filter rules.
 func (s *Service) UniqueCanaryHeaders() []string {
 	var headers []string
@@ -987,6 +1053,10 @@ func (s *Service) IngressHandlerName() string {
 // IngressPipelineName returns the ingress pipeline name
 func (s *Service) IngressPipelineName() string {
 	return fmt.Sprintf("mesh-ingress-pipeline-%s", s.Name)
+}
+// IngressVMPipelineName returns the ingress pipeline name
+func (s *StorageInstance) IngressVMPipelineName() string {
+	return fmt.Sprintf("mesh-ingress-pipeline-%s", s.InstanceID)
 }
 
 // BackendName returns backend service name
@@ -1052,6 +1122,32 @@ func (s *Service) SidecarIngressPipelineSpec(applicationPort uint32) (*superviso
 	return superSpec, nil
 }
 
+// SidecarIngressPipelineSpec returns a spec for sidecar ingress pipeline
+func (s *VMService) SidecarIngressPipelineSpec(i *StorageInstance) (*supervisor.Spec, error) {
+	mainServers := []*proxy.Server{
+		{
+			URL: i.ApplicationEndpoint(),
+		},
+	}
+
+	pipelineSpecBuilder := newPipelineSpecBuilder(i.IngressVMPipelineName())
+
+	if s.Resilience != nil {
+		pipelineSpecBuilder.appendRateLimiter(s.Resilience.RateLimiter)
+	}
+
+	pipelineSpecBuilder.appendProxy(mainServers, s.LoadBalance)
+
+	yamlConfig := pipelineSpecBuilder.yamlConfig()
+	superSpec, err := supervisor.NewSpec(yamlConfig)
+	if err != nil {
+		logger.Errorf("new spec for %s failed: %v", yamlConfig, err)
+		return nil, err
+	}
+
+	return superSpec, nil
+}
+
 // SidecarEgressPipelineSpec returns a spec for sidecar egress pipeline
 func (s *Service) SidecarEgressPipelineSpec(instanceSpecs []*ServiceInstanceSpec,
 	canaries []*ServiceCanary, appCert, rootCert *Certificate) (*supervisor.Spec, error) {
@@ -1088,6 +1184,11 @@ func (s *Service) SidecarEgressPipelineSpec(instanceSpecs []*ServiceInstanceSpec
 // ApplicationEndpoint returns application endpoint URL string
 func (s *Service) ApplicationEndpoint(port uint32) string {
 	return fmt.Sprintf("%s://%s:%d", s.Sidecar.IngressProtocol, s.Sidecar.Address, port)
+}
+
+// ApplicationEndpoint returns application endpoint URL string
+func (s *StorageInstance) ApplicationEndpoint() string {
+	return fmt.Sprintf("%s://%s:%d", s.Protocol, s.IP, s.Port)
 }
 
 // IngressEndpoint returns Ingress endpoint URL string

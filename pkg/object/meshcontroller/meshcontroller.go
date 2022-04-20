@@ -46,7 +46,7 @@ type (
 
 		role              string
 		master            *master.Master
-		worker            *worker.Worker
+		worker            worker.RawWorker
 		ingressController *ingresscontroller.IngressController
 	}
 )
@@ -96,11 +96,13 @@ func (mc *MeshController) reload() {
 	serviceName := mc.superSpec.Super().Options().Labels[label.KeyServiceName]
 
 	switch meshRole {
-	case "", label.ValueRoleMaster, label.ValueRoleWorker:
+	case "", label.ValueRoleMaster, label.ValueRoleWorker, label.ValueRoleVMWorker:
 		if serviceName == "" {
 			meshRole = label.ValueRoleMaster
-		} else {
+		} else if meshRole == "worker" {
 			meshRole = label.ValueRoleWorker
+		} else if meshRole == "vm-worker" {
+			meshRole = label.ValueRoleVMWorker
 		}
 	case label.ValueRoleIngressController:
 		// ingress controller does not care about service name
@@ -122,6 +124,11 @@ func (mc *MeshController) reload() {
 		logger.Infof("%s running in worker role", mc.superSpec.Name())
 		mc.role = label.ValueRoleWorker
 		mc.worker = worker.New(mc.superSpec)
+	case label.ValueRoleVMWorker:
+		logger.Infof("%s running in vm-worker role", mc.superSpec.Name())
+		mc.role = label.ValueRoleVMWorker
+		mc.worker = worker.NewVMWorker(mc.superSpec)
+		mc.api.RegisterAPIsV2()
 
 	case label.ValueRoleIngressController:
 		logger.Infof("%s running in ingress controller role", mc.superSpec.Name())
