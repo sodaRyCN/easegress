@@ -56,6 +56,9 @@ type (
 	// ServiceSpecFunc is the callback function type for service spec.
 	ServiceSpecFunc func(event Event, serviceSpec *spec.Service) bool
 
+	// VMServiceSpecFunc is the callback function type for service spec.
+	VMServiceSpecFunc func(event Event, serviceSpec *spec.VMService, instanceSpec *spec.StorageInstance) bool
+
 	// ServiceSpecsFunc is the callback function type for service specs.
 	ServiceSpecsFunc func(value map[string]*spec.Service) bool
 
@@ -112,6 +115,7 @@ type (
 	//  2. Based on comparison on entries with the same prefix.
 	Informer interface {
 		OnPartOfServiceSpec(serviceName string, fn ServiceSpecFunc) error
+		OnPartOfVMServiceSpec(serviceName string, fn VMServiceSpecFunc) error
 		OnAllServiceSpecs(fn ServiceSpecsFunc) error
 
 		OnPartOfServiceInstanceSpec(serviceName, instanceID string, fn ServicesInstanceSpecFunc) error
@@ -295,6 +299,25 @@ func (inf *meshInformer) OnPartOfServiceSpec(serviceName string, fn ServiceSpecF
 			}
 		}
 		return fn(event, serviceSpec)
+	}
+
+	return inf.onSpecPart(storeKey, syncerKey, specFunc)
+}
+
+// OnPartOfVMServiceSpec watches one service's spec
+func (inf *meshInformer) OnPartOfVMServiceSpec(serviceName string, fn VMServiceSpecFunc) error {
+	storeKey := layout.ServiceSpecKey(serviceName)
+	syncerKey := serviceSpecSyncerKey(serviceName)
+
+	specFunc := func(event Event, value string) bool {
+		serviceSpec := &spec.VMService{}
+		if event.EventType != EventDelete {
+			if err := yaml.Unmarshal([]byte(value), serviceSpec); err != nil {
+				logger.Errorf("BUG: unmarshal %s to yaml failed: %v", value, err)
+				return true
+			}
+		}
+		return fn(event, serviceSpec, nil)
 	}
 
 	return inf.onSpecPart(storeKey, syncerKey, specFunc)
